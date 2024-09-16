@@ -15,6 +15,7 @@ cesar_asm:
     push rbp
     mov rbp, rsp
     ; Guardar rdi en la pila para no perderlo
+    movzx edx, byte [rdi + 1] ; Para probar que lea bien, lee cualquier cosa
     push rdi
     sub rsp, 8 ; Le resto 8 a la pila para que este alíneada
     call strLen
