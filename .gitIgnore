@@ -1,0 +1,14 @@
+# Ignorar ejecutables generados por C y ensamblador
+*.o
+*.obj
+*.exe
+*.out
+*.elf
+*.a
+*.so
+*.dll
+*.dylib
+*.pdb
+
+# Ignorar la carpeta .vscode
+.vscode/
