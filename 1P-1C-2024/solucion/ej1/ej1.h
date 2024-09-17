@@ -11,7 +11,7 @@
 
 typedef struct nodo_display_list_t {
     // Puntero a la función que calcula z (puede ser distinta para cada nodo):
-    uint8_t (*primitiva)(uint8_t x, uint8_t y, uint8_t z_size);
+    uint8_t (*primitiva)(uint8_t x, uint8_t y, uint8_t z_size); // El puntero ocupa 8 bytes
     // Coordenadas del nodo en la escena:
     uint8_t x;
     uint8_t y;
