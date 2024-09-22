@@ -61,7 +61,7 @@ bool texto_liberar(texto_cualquiera_t* texto) {
  *   - texto_literal
  *   - texto_concatenar
  */
-bool EJERCICIO_1A_HECHO = false;
+bool EJERCICIO_1A_HECHO = true;
 
 /**
  * Crea un `texto_literal_t` que representa la cadena pasada por parámetro.
@@ -74,7 +74,16 @@ bool EJERCICIO_1A_HECHO = false;
  *   - texto: El texto que debería ser representado por el literal a crear.
  */
 texto_literal_t* texto_literal(const char* texto) {
-	texto_literal_t* resultado = NULL;
+	texto_literal_t* resultado = malloc(sizeof(texto_literal_t));
+	resultado->tipo = 0;
+	resultado->usos = 0;
+	resultado->contenido = texto;
+	uint64_t tamanioTexto = 0;
+	while(*texto != '\0'){
+		tamanioTexto += 1;
+		texto++;
+	}
+	resultado->tamanio = tamanioTexto;
 	return resultado;
 }
 
@@ -92,9 +101,15 @@ texto_literal_t* texto_literal(const char* texto) {
  *   - derecha:   El texto que debería ir a la derecha.
  */
 texto_concatenacion_t* texto_concatenar(texto_cualquiera_t* izquierda, texto_cualquiera_t* derecha) {
-	texto_concatenacion_t* resultado = NULL;
+	texto_concatenacion_t* resultado = malloc(sizeof(texto_concatenacion_t));
+	izquierda-> usos = izquierda->usos + 1;
+	derecha->usos += derecha->usos + 1;
+	resultado->tipo = 1;
+	resultado->usos = 0;
+	resultado->izquierda = izquierda;
+	resultado->derecha = derecha;
 	return resultado;
-}
+} 
 
 /**
  * Marca el ejercicio 1B como hecho (`true`) o pendiente (`false`).
@@ -102,7 +117,7 @@ texto_concatenacion_t* texto_concatenar(texto_cualquiera_t* izquierda, texto_cua
  * Funciones a implementar:
  *   - texto_tamanio_total
  */
-bool EJERCICIO_1B_HECHO = false;
+bool EJERCICIO_1B_HECHO = true;
 
 /**
  * Calcula el tamaño total de un `texto_cualquiera_t`. Es decir, suma todos los
@@ -114,12 +129,11 @@ bool EJERCICIO_1B_HECHO = false;
 uint64_t texto_tamanio_total(texto_cualquiera_t* texto) {
 	if (texto->tipo == TEXTO_LITERAL) {
 		texto_literal_t* literal = (texto_literal_t*) texto;
-		// ¿Cómo calculo el tamaño del texto que representa un literal?
-		return 0;
+		return literal->tamanio;
 	} else {
 		texto_concatenacion_t* concatenacion = (texto_concatenacion_t*) texto;
-		// ¿Cómo calculo el tamaño del texto que representa una concatenación?
-		return 0;
+		// Es una función recursiva, devolves la suma del tamaño de tu izq y derecha
+		return texto_tamanio_total(concatenacion->derecha) + texto_tamanio_total(concatenacion->izquierda);
 	}
 }
 
@@ -129,7 +143,7 @@ uint64_t texto_tamanio_total(texto_cualquiera_t* texto) {
  * Funciones a implementar:
  *   - texto_chequear_tamanio
  */
-bool EJERCICIO_1C_HECHO = false;
+bool EJERCICIO_1C_HECHO = true;
 
 /**
  * Chequea si los tamaños de todos los nodos literales internos al parámetro
@@ -143,13 +157,17 @@ bool EJERCICIO_1C_HECHO = false;
 bool texto_chequear_tamanio(texto_cualquiera_t* texto) {
 	if (texto->tipo == TEXTO_LITERAL) {
 		texto_literal_t* literal = (texto_literal_t*) texto;
-		// ¿Cómo chequeo si un literal tiene el tamaño bien calculado?
-		return false;
+		uint64_t tamanio_esperado = literal->tamanio;
+		uint64_t tamanioTexto = 0;
+		const char* contenido = literal->contenido;
+		while(*contenido != '\0'){
+			tamanioTexto += 1;
+			contenido++;
+		}
+		return tamanio_esperado == tamanioTexto;
 	} else {
 		texto_concatenacion_t* concatenacion = (texto_concatenacion_t*) texto;
-		// ¿Cómo chequeo si una concatenación tiene el tamaño de sus literales
-		//  bien calculado?
-		return false;
+		return texto_chequear_tamanio(concatenacion->izquierda) && texto_chequear_tamanio(concatenacion->derecha);
 	}
 }
 
