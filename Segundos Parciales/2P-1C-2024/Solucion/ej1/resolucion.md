@@ -18,8 +18,8 @@ Una vez dentro de la rutina de atención y del setup habitual vamos a llamar a u
 El codigo de la interrupción dentro de isr.asm va a ser: 
 
 ```asm
-    global _isr80 
-    _isr80:
+global _isr80 
+  _isr80:
     pushad
     push ESI
     push EDI
