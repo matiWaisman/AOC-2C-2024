@@ -15,6 +15,26 @@ Para pasarle los parametros vamos a usar los registros eax para el selector de l
 
 Una vez dentro de la rutina de atención y del setup habitual vamos a llamar a una función de C que se encargue de hacer todo el proceso. 
 
+El codigo de la interrupción dentro de isr.asm va a ser: 
+
+```asm
+    global _isr80 
+    _isr80:
+    pushad
+    push ESI
+    push EDI
+    push EAX
+    call espiar
+
+    ;acomodo la pila
+    add ESP, 12
+    ;Para no pisar el resultado con el popad
+    mov [ESP+offset_EAX], eax
+
+    popad
+    iret
+```
+
 Luego desde esa funcion vamos a llamar a otra que reciba como parametro el selector de la tarea a espiar.
 Esta función va a con el selector obtener el TSS descriptor de la GDT y con ese descriptor obtener el cr3 guardado de la tarea a espíar en su tss y devolver el cr3.
 
@@ -77,7 +97,6 @@ Entonces la funcion de C queda:
 
 ```c
 int espiar(uint16_t selector, vaddr_t direccion_a_espiar, vaddr_t direccion_a_escribir){
-
     uint32_t cr3_tarea_espiada = obtener_cr3(selector);
 
     if(!mmu_page_present(cr3_tarea_espiada, direccion_a_espiar)){
@@ -85,12 +104,9 @@ int espiar(uint16_t selector, vaddr_t direccion_a_espiar, vaddr_t direccion_a_es
     }   
 
     uint32_t dato_a_escribir = obtener_dato(cr3_tarea_espiada, direccion_a_espiar);
-
     uint32_t* puntero_a_escribir = (uint32_t*)direccion_a_espiar;
-
     puntero_a_escribir[0] = dato_a_escribir;
 
     return 0;
-
 }
 ```
