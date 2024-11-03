@@ -7,8 +7,14 @@
  * - El `sum` más grande de la lista vacía (`NULL`) es 0.
  */
 uint32_t proyecto_mas_dificil(lista_t* lista) {
-	/* COMPLETAR */
-	return 0; // BORRAR
+	uint32_t res = 0;
+	while(lista != NULL){
+		if(lista->sum > res){
+			res = lista->sum;
+		}
+		lista = lista->next;
+	}
+	return res;
 }
 
 /**
