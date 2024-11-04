@@ -92,3 +92,5 @@ uint32_t fuiLlamadaMasVeces(uint16_t segsel, uint32_t mi_utc){
 }
 ```
 
+E) Una mejor manera de guardar el UTC seria dentro de un espacio de memoria reservado de la tarea donde lo guarde. Como el .data del codigo o en una parte shared si se quiere compartir con otras tareas como para hacer algo de este estilo de comparar si fuiste llamada mas veces sin tener que pasar por el kernel. 
+
