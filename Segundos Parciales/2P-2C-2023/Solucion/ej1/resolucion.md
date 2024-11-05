@@ -26,6 +26,7 @@ _isr32:
     call sched_next_task
     push ax ; El ax que devuelve sched_next_task es el que queremos incrementar
     call incrementar_edx
+    add esp, 4
     cmp ax, 0
     je .fin
 
