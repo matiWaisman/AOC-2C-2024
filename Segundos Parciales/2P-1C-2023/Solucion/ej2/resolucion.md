@@ -1,4 +1,4 @@
-La pagina debe ser escrita a disco si el bit present en la pde y pte que apuntan a esa direccion fisica en el cr3 de la tarea esta en 0 en ambos o si no encontramos que este mapeada esa direccion fisica en las estructuras de paginacion definidas en el cr3 que nos pasan. Si encontramos que esta mapeada esa direccion y esta presente no lo vamos a cargar en disco. 
+La pagina debe ser escrita a disco si el bit present en la pde y pte que apuntan a esa direccion fisica en el cr3 de la tarea esta en 0 en ambos o si no encontramos que este mapeada esa direccion fisica en las estructuras de paginacion definidas en el cr3 que nos pasan. Si encontramos que esta mapeada esa direccion y esta dirty porque se escribio no lo vamos a cargar en disco. 
 
 ```c
 uint8_t escribir_a_disco(uint32_t cr3, paddr_t phy){
