@@ -74,24 +74,25 @@ bool mmu_page_present(uint32_t cr3, vaddr_t virt){
 }
 ``` 
 
-Si continuamos ahora llamamos a una funcion que obtenga el dato a leer de la tarea espiada y lo devuelva.
+Si continuamos ahora llamamos a una funcion que obtenga la pagina completa de la tarea a espiar y la pegue en una direccion de memoria mapeada en la tarea espia. 
+
+Como esta activa la paginacion no se puede acceder a la direccion fisica que obtuvimos desde la tarea espia. La unica manera de obtener el dato es copiando mapeando la pagina fisica a una virtual dentro de la tarea espia y despues leer el dato y desmapear la copia.
+
+En la funcion vamos a borrar el offset para copiar la pagina bien desde la base todos los 4 kbs. 
 
 ```c
-uint32_t obtener_dato(uint32_t cr3, vaddr_t virt){
+paddr_t obtener_paddr(uint32_t cr3, vaddr_t virt){
   uint32_t directory_index = VIRT_PAGE_DIR(virt); 
   uint32_t table_index = VIRT_PAGE_TABLE(virt);
-  uint32_t offset = VIRT_PAGE_OFFSET(virt);
 
   pd_entry_t* page_directory = (pd_entry_t*) CR3_TO_PAGE_DIR(cr3);
 
   pt_entry_t* page_table_pointer = (pt_entry_t*)MMU_ENTRY_PADDR(page_directory[directory_index].pt);
-  paddr_t direccion_dato_a_copiar  = page_table_pointer[table_index].page + offset;
-  uint32_t* pointer_dato_a_copiar = (uint32_t*) direccion_dato_a_copiar;
-  return &pointer_dato_a_copiar;
+  return page_table_pointer[table_index].page;
 }
 ```
 
-Por ultimo escribimos en la direccion virtual de la tarea espia. Como estamos en esa tarea no hace falta tocar el cr3.
+Luego en la funcion principal habria que mapear esa paddr_t a una direccion virtual que no usemos en la tarea espiadora para nada y dejar siempre esa direccion virtual para esto. Podemos usar SRC_VIRT_PAGE como direccion virtual para guardar la copia temporalmente.
 
 Entonces la funcion de C queda: 
 
@@ -103,9 +104,15 @@ int espiar(uint16_t selector, vaddr_t direccion_a_espiar, vaddr_t direccion_a_es
         return 1;
     }   
 
-    uint32_t dato_a_escribir = obtener_dato(cr3_tarea_espiada, direccion_a_espiar);
-    uint32_t* puntero_a_escribir = (uint32_t*)direccion_a_espiar;
-    puntero_a_escribir[0] = dato_a_escribir;
+    paddr_t direccion_fisica_a_copiar = obtener_paddr(cr3, direccion_a_espiar);
+
+    mmu_map_page(rcr3(), SRC_VIRT_PAGE, direccion_fisica_a_espiar, MMU_P | MMU_W); // Mapeamos la base de la pagina
+
+    uint32_t* dato_a_copiar = *((SRC_VIRT_PAGE & 0xFFFFFF000) | VIRT_PAGE_OFFSET(direccion_a_espiar));
+
+    mmu_unmap_page(rcr3(), SRC_VIRT_PAGE);
+
+    puntero_a_escribir[0] = &dato_a_copiar;
 
     return 0;
 }
