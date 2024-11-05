@@ -1,14 +1,16 @@
 A)  Las entradas que se agregan a la GDT que van a ser relevantes van a ser los TSS descriptors de las tareas creadas. Gracias a ellos vamos a poder pausar/ restaurar las tareas y incrementar el valor de ecx cada vez que la tarea vuelva a ser ejecutada. Tambien va a servir para comparar el valor de ecx entre las diferentes tareas.
 
-B) Lo que habria que agregar es que despues de determinar en la rutina de atención de la interrupción cual es la proxima tarea al llamar a sched_next_task() llamamos a una función en C que va a recibir por parametro el selector de la tarea elegida. En esa función lo que vamos a hacer va a ser acceder a la tss por medio de la gdt y incrementar en uno edx. El codigo de la función sería: 
+B) Lo que habria que agregar es que despues de determinar en la rutina de atención de la interrupción cual es la proxima tarea al llamar a sched_next_task() llamamos a una función en C que va a recibir por parametro el selector de la tarea elegida. Como el edx que esta en la tss puede estar sucio despues de hacer las calls a C lo que vamos a hacer es entrar a la posicion de la pila de la tarea y incrementar el edx de ahi. 
 
 ```c
 void incrementar_edx(uint16_t segsel){
   uint16_t idx = segsel >> 3;
 
   tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
+  
+  uint32_t* stack_pointer = tss_pointer->esp;
 
-  tss_pointer->edx += 1;
+  stack_pointer[5] = stack_pointer[5] + 1;
 }
 ```
 
@@ -22,7 +24,7 @@ _isr32:
     call next_clock
     ; 2. Realizamos el cambio de tareas en caso de ser necesario
     call sched_next_task
-    push ax
+    push ax ; El ax que devuelve sched_next_task es el que queremos incrementar
     call incrementar_edx
     cmp ax, 0
     je .fin
@@ -54,7 +56,7 @@ IDT_ENTRY3(80); // Definición de la syscall fuiLlamadaMasVeces
 IDT_ENTRY3(88);
 IDT_ENTRY3(98);
 ```
-
+En isr.h agregar ```void _isr80();```
 
 Y luego agregar en isr.asm el codigo de la rutina de atención a la excepción.
 
@@ -86,9 +88,9 @@ uint32_t fuiLlamadaMasVeces(uint16_t segsel, uint32_t mi_utc){
 
   tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
  
-  uint32_t utc_a_comparar = tss_pointer->ecx;
+  uint32_t* stack_pointer = tss_pointer->esp;
 
-  return mi_utc > utc_a_comparar;
+  return mi_utc > stack_pointer[5];
 }
 ```
 
