@@ -69,18 +69,19 @@ Como voy a empezar sin ninguna tarea con video no hace falta hacer una inicializ
 int8_t current_task = 0;
 int8_t current_task_with_video = 0;
 
-uint16_t sched_next_video(void) {
+void sched_next_video(void) {
   // Buscamos la próxima tarea viva (comenzando en la actual)
   int8_t i;
   for (i = (current_task_with_video + 1); (i % MAX_TASKS) != current_task_with_video; i++) {
     // Si esta tarea está disponible la ejecutamos
     if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
-      break;
+      int16_t i_selector = sched_tasks[i % MAX_TASKS].selector;
+      int16_t idx = i_selector >> 3;
+      if(idx != GDT_IDX_TASK_IDLE && idx != GDT_IDX_TASK_INITIAL){ // Para no darle video ni a la inicial ni a la idle nunca
+        current_task_with_video = i % MAX_TASKS;
+      }
     }
   }
-  // Ajustamos i para que esté entre 0 y MAX_TASKS-1
-  i = i % MAX_TASKS; 
-  return sched_tasks[i].selector;
   // Asumo que nunca va a quedar ninguna tarea sin video
 }
 ```
