@@ -26,9 +26,14 @@ extern current_task
 
 global _isr80
 _isr80:
+   popad
    call sched_exit_task
    mov word [sched_task_selector], ax
    jmp far [sched_task_offset]
+   .fin:
+   call tasks_tick
+   call tasks_screen_update
+   popad iret
 ```
 
 ```c
@@ -42,6 +47,7 @@ B)
 ```asm
 global _isr80
 _isr80:
+   pushad
    call sched_exit_task
    ; En ax tenemos el selector de la siguiente tarea. 
    push ax ; Selector de segmento de la tarea a saltar
@@ -51,10 +57,14 @@ _isr80:
    pop ax ; Restauramos el selector a saltar
    mov word [sched_task_selector], ax
    jmp far [sched_task_offset]
+   .fin:
+   call tasks_tick
+   call tasks_screen_update
+   popad iret
 ```
 
 ```c
-void save_id(uint16_t selector_a_modificar, uint32_t id_tarea_a_guardar){
+void save_id(uint32_t id_tarea_a_guardar, uint16_t selector_a_modificar,){
   uint16_t idx = selector_a_modificar >> 3;
 
   tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
@@ -65,14 +75,88 @@ void save_id(uint16_t selector_a_modificar, uint32_t id_tarea_a_guardar){
 }
 ```
 
-C) Suponiendo que cuando le cae la interrupcion de clock a la tarea que se corrio despues de un exit ahi hay que actializar quien la llamo:
+C) Suponiendo que cuando le cae la interrupcion de clock a la tarea que se corrio despues de un exit ahi hay que actualizar quien la llamo:
 
-Pondria dos variables globales (preguntar el tema de variables globales dentro del kernel) o reservar 3 bytes de memoria del kernel donde: 
+Pondria dos variables globales en el archivo ```isr.asm``` . Una variable va a servir como un booleano que va a indicar si hace falta o no modificar el eax de la tarea a pausar y la otra variable va a contener el id que hay que ponerle. 
 
-Los primeros 2 bytes van a contener el id de la tarea que llamo al exit y el ultimo byte va a ser un booleano que indique si hay que modificar o no el eax de la tarea que esta terminando. Por lo que el id puede quedar inutil si el booleano indica que no hay que escribir. 
+Si el booleano esta en 0 hacemos el procedimiento normal del clock. Si esta en 1 modificamos el eax y lo volvemos a setear en 0 para no modificar siempre el eax de las tareas en las interrupciones de clock. 
 
-Entonces cuando una tarea hace exit antes de saltar a la siguiente tarea seteamos el booleano en 1 y guardamos el id. Luego en la rutina de atencion del reloj antes de decidir cual va a ser la proxima tarea a correr verificamos si el booleano esta en verdadero, si esta hacemos el mismo proceso que en el B para modificar el eax de la tarea que llamo el exit pasandole a la funcion el id que esta guardado en memoria. Luego seteamos el booleano en falso para que si hay un nuevo pulso de clock no se vuelva a pisar eax hasta el siguiente exit. 
+Entonces cuando se llame a la syscall exit lo unico que va a hacer es desabilitar la tarea en ejecucion, setear la variables globales y elegir la siguiente tarea a ejecutar. 
 
-En caso que el booleano este en 0 seguimos el proceso habitual. 
+En ```isr.asm``` agregamos arriba de todo una seccion ```.data``` con las dos variables inicializando ambas en 0. 
 
-FALTA COMPLETAR IMPLEMENTACION Y EL D.
+```asm
+section .data
+global hubo_exit
+global id_exit
+
+hubo_exit: db 0 ; Inicializar el booleano en 0
+id_exit: dd 0 ; Inicializar en id en 0
+```
+
+Modificamos la syscall para que ella no sea la que guarde el id si no que simplemente prenda la flag:
+
+```asm
+global _isr80
+_isr80:
+   pushad
+   call sched_exit_task
+   ; En ax tenemos el selector de la siguiente tarea. 
+   mov byte [hubo_exit], 1 ; Prendemos la flag que hay que modificar el eax de la tarea pausada en el clock
+   mov eci, [current_task]
+   mov dword [id_exit], eci ; Guardamos en la variable global el id a modificar en el eax de la tarea saliente
+   mov word [sched_task_selector], ax
+   jmp far [sched_task_offset]
+   .fin:
+   call tasks_tick
+   call tasks_screen_update
+   popad iret
+```
+
+Ahora modificamos la rutina de atencion del clock:
+
+```asm
+global _isr32
+_isr32:
+    pushad
+    ; 1. Le decimos al PIC que vamos a atender la interrupción
+    call pic_finish1
+    call next_clock
+    ; 2. Realizamos el cambio de tareas en caso de ser necesario
+    cmp [hubo_exit], 0
+    je .cambiar_tarea
+    ; Si estamos aca es porque hay que modificar el eax de la tarea saliente
+    ; Lo primero que hacemos es volver a setear la flag en 0 para que en el siguiente pulso no se vuelva a escribir en el eax si no hace falta
+    mov [hubo_exit], 0
+    str ax ; Cargo el selector de la tarea a modificar su eax
+    push ax 
+    push [id_exit] ; Pusheo el id de la tarea que tenemos que poner en su eax
+    call save_id
+    add esp, 5 ; Desapilamos
+    ; Ya cuando estamos aca hay que seguir el procedimiento habitual
+    .cambiar_tarea:
+      call sched_next_task
+      cmp ax, 0
+      je .fin
+
+      str bx
+      cmp ax, bx
+      je .fin
+
+      mov word [sched_task_selector], ax
+      jmp far [sched_task_offset]
+
+      .fin:
+        ; 3. Actualizamos las estructuras compartidas ante el tick del reloj
+        call tasks_tick
+        ; 4. Actualizamos la "interfaz" del sistema en pantalla
+        call tasks_screen_update
+        popad
+        iret
+```
+
+D) Es una manera poco eficiente estar pasandose datos por registros de otra tarea ya que conlleva mucho mas trabajo del kernel y estar pisando un registro tan importante como el eax tambien no es muy eficiente. 
+
+Una manera mucho mejor para poder pasar datos entre tareas seria definir un area de memoria compartida entre tareas como hicimos en el taller con el score de los juegos de pong. Asi en vez de tener que hacer una syscall y que el kernel tenga que meterse a la pila de la tarea a modificar simplemente hay que hacer un mov desde la tarea a una posicion de memoria.
+
+Un problema que puede surgir al pisar registros puede ser perder datos o usar eax pensando que es una cosa y realmente tiene otro dato. 
