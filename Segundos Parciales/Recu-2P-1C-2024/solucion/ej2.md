@@ -10,6 +10,12 @@ typedef struct {
 
 Para agregar las dos syscalls nuevas vamos a definir dos interrupciones nuevas en `idt_init()`.
 
+Entonces en `idt_init()` agregamos: 
+
+```c
+IDT_ENTRY3(80);
+```
+
 Como las syscalls suelen definirse a partir del numero de interrupcion 80 vamos a definir lock como la 80 y release como la 81.
 
 Para que puedan ser llamadas desde las tareas ambas van a ser `IDT_ENTRY3`. Tambien en `isr.h` hay que agregar:
