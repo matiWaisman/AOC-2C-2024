@@ -14,6 +14,7 @@ Entonces en `idt_init()` agregamos:
 
 ```c
 IDT_ENTRY3(80);
+IDT_ENTRY3(81);
 ```
 
 Como las syscalls suelen definirse a partir del numero de interrupcion 80 vamos a definir lock como la 80 y release como la 81.
