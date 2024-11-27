@@ -120,7 +120,7 @@ _isr80:
 En `tss.c` agregamos la auxiliar: 
 
 ```c
-pd_entry_t* obtener_edx(uint16_t segsel) {
+pd_entry_t* obtener_ecx(uint16_t segsel) {
     uint16_t idx = segsel >> 3;
     tss_t* tss_task = gdt[idx];
     uint32_t* pila = tss_task->esp;
