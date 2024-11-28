@@ -95,7 +95,7 @@ Y en `tss.c` agrego la funcion:
 ```c
 pd_entry_t* obtener_ecx(uint16_t segsel) {
     uint16_t idx = segsel >> 3;
-    tss_t* tss_task = gdt[idx];
+    tss_t* tss_task = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
     uint32_t* pila = tss_task->esp;
     uint32_t ecx = pila[6];
     return ecx;
