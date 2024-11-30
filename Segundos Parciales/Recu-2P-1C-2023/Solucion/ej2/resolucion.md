@@ -1,6 +1,6 @@
 A) La excepcion que se produce cuando se trata de ejecutar una instruccion no soportada es la numero 6, invalid opcode. 
 
-B) ![alt text](./images/image.png) 
+B) ![alt text](./images/image2.png) 
 
 La pila se va a ver asi con esp apuntando a eip. 
 
