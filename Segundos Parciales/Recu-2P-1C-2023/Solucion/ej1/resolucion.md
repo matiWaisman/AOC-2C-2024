@@ -1,162 +1,194 @@
-A) Para implementar la syscall:
+A) Para implementar la syscall lo que hay que hacer es definir una interrupcion nueva. Para eso vamos a definir una interrupcion nueva en `idt_init()`.
 
-La interrupción tiene que estar entre la 32 y 255 que son las interrupciones definidas para interrupciones de usuario. Considerando las que teníamos definidas de los talleres y que por lo general las syscalls son interrupciones mayores a 80, elijo que sea la 80.
+Como las syscalls suelen definirse a partir del numero de interrupcion 80 vamos a definirla como la numero 80.
 
-Para la interrupción hay que agregarle una entrada en la idt y especificar en su descriptor que pueda ser llamada desde nivel 3 pero que el codigo que ejecute sea de nivel 0. Por lo que en el archivo idt.c habría que agregarla en idt_init() poniéndolo junto a las syscalls, quedando:
+Para que pueda ser llamada desde las tareas va a ser una `IDT_ENTRY3`. Entonces en la funcion `idt_init` agregamos: 
 
 ```c
 // COMPLETAR: Syscalls
-IDT_ENTRY3(80); // Definición de la syscall exit
+IDT_ENTRY3(80);
 IDT_ENTRY3(88);
 IDT_ENTRY3(98);
 ```
 
-Tambien en isr.h habria que agregarla: 
+Tambien en isr.h hay que agregar:
 
 ```h
 void _isr80();
-void _isr88();
-void _isr98();
 ```
 
-Luego en isr.asm la implementamos:
+El codigo de atencion de la interrupcion exit queda definido como: 
 
-```asm
-extern current_task
-
-global _isr80
-_isr80:
-   popad
-   call sched_exit_task
-   mov word [sched_task_selector], ax
-   jmp far [sched_task_offset]
-   .fin:
-   call tasks_tick
-   call tasks_screen_update
-   popad iret
-```
-
-```c
-uint16_t sched_exit_task(void) {
-  sched_disable_task(current_task);
-
-  return sched_next_task();
-}
-```
-B) 
 ```asm
 global _isr80
 _isr80:
-   pushad
-   call sched_exit_task
-   ; En ax tenemos el selector de la siguiente tarea. 
-   push ax ; Selector de segmento de la tarea a saltar
-   push DWORD [current_task] ; Id de la tarea actual
-   call save_id
-   add esp, 4
-   pop ax ; Restauramos el selector a saltar
-   mov word [sched_task_selector], ax
-   jmp far [sched_task_offset]
-   .fin:
-   call tasks_tick
-   call tasks_screen_update
-   popad iret
+    pushad
+    ; Deshabilitamos la tarea actual
+    push DWORD [current_task]
+    call sched_disable_task
+    add esp, 4
+    call sched_next_task
+    cmp ax, 0
+    je .fin
+
+    str bx
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset] 
+    .fin: 
+      popad
+      iret
 ```
 
+B) Para que exit tambien guarde el id de la tarea que la llamo en el eax de la proxima tarea a ejecutar voy a meterme en la pila de la tss de la proxima tarea a ejecutar y voy a modificar el valor de su eax. 
+
+El codigo de atencion de la interrupcion queda: 
+
+```asm
+global _isr80
+_isr80:
+    pushad
+    ; Deshabilitamos la tarea actual
+    push DWORD [current_task]
+    call sched_disable_task
+    add esp, 4
+    call sched_next_task
+    ; sched_next_task nos devuelve el selector de la siguiente tarea a ejecutar. 
+    push DWORD [current_task]
+    push ax
+    call guardar_id
+    pop ax ; Restauramos el valor del selector de la tarea a saltar
+    add esp, 4
+    cmp ax, 0
+    je .fin
+
+    str bx
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset] 
+    .fin: 
+      popad
+      iret
+```
+
+Y en `tss.c` importamos la gdt y agregamos la funcion `guardar_id`:
+
 ```c
-void save_id(uint32_t id_tarea_a_guardar, uint16_t selector_a_modificar,){
-  uint16_t idx = selector_a_modificar >> 3;
-
-  tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
-
-  uint32_t* esp = tss_pointer->esp;
-
-  esp[7] = id_tarea_a_guardar;
+void guardar_id(uint16_t segsel, uint32_t id_tarea){
+  uint16_t idx = segsel >> 3;
+  tss_t* tss_task = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
+  uint32_t* pila = tss_task->esp;
+  pila[7] = id_tarea; 
 }
 ```
 
-C) Suponiendo que cuando le cae la interrupcion de clock a la tarea que se corrio despues de un exit ahi hay que actualizar quien la llamo:
+C) Si ahora el que tiene que modificar el eax si se produjo un exit es la interrupcion de reloj voy a agregar dos variables globales dentro del archivo de las interrupciones: Una que se va a llamar `hubo_exit` y la otra `id_tarea_que_hizo_exit`. 
 
-Pondria dos variables globales en el archivo ```isr.asm``` . Una variable va a servir como un booleano que va a indicar si hace falta o no modificar el eax de la tarea a pausar y la otra variable va a contener el id que hay que ponerle. 
-
-Si el booleano esta en 0 hacemos el procedimiento normal del clock. Si esta en 1 modificamos el eax y lo volvemos a setear en 0 para no modificar siempre el eax de las tareas en las interrupciones de clock. 
-
-Entonces cuando se llame a la syscall exit lo unico que va a hacer es desabilitar la tarea en ejecucion, setear la variables globales y elegir la siguiente tarea a ejecutar. 
-
-En ```isr.asm``` agregamos arriba de todo una seccion ```.data``` con las dos variables inicializando ambas en 0. 
+Asi que al principio de `isr.asm` agregamos: 
 
 ```asm
 section .data
-global hubo_exit
-global id_exit
+global hubo_exit    
+global id_tarea_que_hizo_exit  
 
-hubo_exit: db 0 ; Inicializar el booleano en 0
-id_exit: dd 0 ; Inicializar en id en 0
+hubo_exit:   db 0  
+id_tarea_que_hizo_exit: dd 0    
 ```
 
-Modificamos la syscall para que ella no sea la que guarde el id si no que simplemente prenda la flag:
+Y ahora en la interrupcion del exit lo que se va a hacer es setear estas variables globales.
 
 ```asm
 global _isr80
 _isr80:
-   pushad
-   call sched_exit_task
-   ; En ax tenemos el selector de la siguiente tarea. 
-   mov byte [hubo_exit], 1 ; Prendemos la flag que hay que modificar el eax de la tarea pausada en el clock
-   mov eci, [current_task]
-   mov dword [id_exit], eci ; Guardamos en la variable global el id a modificar en el eax de la tarea saliente
-   mov word [sched_task_selector], ax
-   jmp far [sched_task_offset]
-   .fin:
-   call tasks_tick
-   call tasks_screen_update
-   popad iret
+    pushad
+    ; Deshabilitamos la tarea actual
+    push DWORD [current_task]
+    call sched_disable_task
+    add esp, 4
+    ; Ahora hacemos que la variable global hubo_exit sea 1 y que tarea_que_hizo_exit sea igual a current_task
+    mov [hubo_exit], 1
+    mov ecx, [current_task]
+    mov [tarea_que_hizo_exit], ecx
+    call sched_next_task
+    cmp ax, 0
+    je .fin
+
+    str bx
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset] 
+    .fin: 
+      popad
+      iret
 ```
 
-Ahora modificamos la rutina de atencion del clock:
+Y ahora la rutina de atencion del reloj va a ser la encargada de actualizar el eax de la tarea si es que la tarea previa hizo un exit: 
 
 ```asm
 global _isr32
+
 _isr32:
     pushad
     ; 1. Le decimos al PIC que vamos a atender la interrupción
     call pic_finish1
     call next_clock
-    ; 2. Realizamos el cambio de tareas en caso de ser necesario
-    cmp [hubo_exit], 0
-    je .cambiar_tarea
-    ; Si estamos aca es porque hay que modificar el eax de la tarea saliente
-    ; Lo primero que hacemos es volver a setear la flag en 0 para que en el siguiente pulso no se vuelva a escribir en el eax si no hace falta
-    mov [hubo_exit], 0
-    str ax ; Cargo el selector de la tarea a modificar su eax
+    ; Primero nos fijamos si hay que actualizarle el eax a la tarea saliente
+    mov al, [hubo_exit]
+    cmp al, 0
+    je .rutina_normal
+    ; Si estamos aca es porque hay que actualizar el eax de esta tarea 
+    call selector_segmento_actual ; Consigo el selector de segmento actual
     push ax 
-    push [id_exit] ; Pusheo el id de la tarea que tenemos que poner en su eax
-    call save_id
-    add esp, 5 ; Desapilamos
-    ; Ya cuando estamos aca hay que seguir el procedimiento habitual
-    .cambiar_tarea:
-      call sched_next_task
-      cmp ax, 0
-      je .fin
+    push [id_tarea_que_hizo_exit]
+    call actualizar_eax_tarea_saliente
+    add esp, 5 
+    ; Actualizamos las variables globales para que en el proximo clock no se toque ningun eax si no se hizo ningun exit
+    mov [hubo_exit], 0 
+    mov [id_tarea_que_hizo_exit], 0
+    .rutina_normal:
+    ; 2. Realizamos el cambio de tareas en caso de ser necesario
+    call sched_next_task
+    cmp ax, 0
+    je .fin
 
-      str bx
-      cmp ax, bx
-      je .fin
+    str bx
+    cmp ax, bx
+    je .fin
 
-      mov word [sched_task_selector], ax
-      jmp far [sched_task_offset]
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset] 
 
-      .fin:
-        ; 3. Actualizamos las estructuras compartidas ante el tick del reloj
-        call tasks_tick
-        ; 4. Actualizamos la "interfaz" del sistema en pantalla
-        call tasks_screen_update
-        popad
-        iret
+    .fin:
+    ; 3. Actualizamos las estructuras compartidas ante el tick del reloj
+    call tasks_tick
+    ; 4. Actualizamos la "interfaz" del sistema en pantalla
+    call tasks_screen_update
+    popad
+    iret
 ```
 
-D) Es una manera poco eficiente estar pasandose datos por registros de otra tarea ya que conlleva mucho mas trabajo del kernel y estar pisando un registro tan importante como el eax tambien no es muy eficiente. 
+En `sched.c` defino la funcion: 
 
-Una manera mucho mejor para poder pasar datos entre tareas seria definir un area de memoria compartida entre tareas como hicimos en el taller con el score de los juegos de pong. Asi en vez de tener que hacer una syscall y que el kernel tenga que meterse a la pila de la tarea a modificar simplemente hay que hacer un mov desde la tarea a una posicion de memoria.
+```c
+uint16_t selector_segmento_actual(){
+    return sched_tasks[current_task].selector;
+}
+```
 
-Un problema que puede surgir al pisar registros puede ser perder datos o usar eax pensando que es una cosa y realmente tiene otro dato. 
+Y en `tss.c` defino la funcion: 
+
+```c
+void actualizar_eax_tarea_saliente(uint32_t id_tarea_hizo_exit, uint16_t segsel){
+  uint16_t idx = segsel >> 3;
+  tss_t* tss_task = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
+  uint32_t* pila = tss_task->esp;
+  pila[7] = id_tarea_hizo_exit;
+}
+
+```
