@@ -1,24 +1,16 @@
-A) El esquema seria el mismo que el taller pero agregando que la parte de memoria virtual asignada a compartido va a estar de 0x08004000 a 0x08005FFF. Esta parte va a ser read-write y de nivel 3. Esa direccion virtual o va a apuntar a la pantalla real en memoria fisica o a la dummy. 
+A) El esquema de memoria seria el mismo que el del taller pero del lado de la memoria virtual habria que agregar debajo de la memoria compartida dos paginas de memoria de nivel 3 read-write. Estas paginas o van a estar mapeadas dentro del kernel en la direccion fisica 0xB8000 o mapeados tambien dentro del kernel a la direccion fisica 0x1E000.
 
-Tambien cada tarea va a tener su propia direccion fisica para la pila de nivel 3 y codigo de nivel 3 dentro del kernel. 
+B) Como el enunciado no aclara si al principio la memoria de video arranca mapeada a la primer tarea o se mapea por primera vez cuando se suelta el tab voy a asumir que se mapea por primera vez la primera vez que se suelta el tab.
 
-B) En init_task_dir habria que agregar el mapeo de la direccion virtual del video a la fisica de la dummy. 
-
-En defines deberiamos agregar la constante de la direccion fisica de la pantalla real y la dummy y la direccion virtual de la pantalla. 
+Lo que habria que cambiar es en `mmu_init_task_dir` tambien mapear las dos paginas virtuales a la pantalla dummy. Para eso definimos las constantes en el archivo `defines.h`:
 
 ```h
-// direccion virtual del video
-#define TASK_VIDEO_MEM_START  0x08004000
-#define TASK_VIDEO_MEM_END  0x08005FFF
-
-// direccion fisica del video real y el dummy
-#define REAL_VIDEO_MEM_START  0xB8000
-#define REAL_VIDEO_MEM_END 0xB9FFF
-#define DUMMY_VIDEO_MEM_START 0x1E000
-#define DUMMY_VIDEO_MEM_END 0x1FFFF
+#define VADDR_VIDEO_MEMORY_START 0x8004000
+#define DUMMY_VIDEO_MEMORY_START 0x1E000
+#define REAL_VIDEO_MEMORY_START 0xB8000
 ```
 
-Dentro de init task dir habria que mapear las dos paginas de video. 
+Y en la funcion `mmu_init_task_dir` vamos a agregar que se mapeen para todas las tareas las dos paginas de video dummy. 
 
 ```c
 paddr_t mmu_init_task_dir(paddr_t phy_start) {
@@ -41,56 +33,32 @@ paddr_t mmu_init_task_dir(paddr_t phy_start) {
   // Como la pila va de abajo hacia arriba le restamos para que arranque en 8k - 1 en vez de 4k
   // Definimos el compartido en kernel
   //phy_shared_init
-  mmu_map_page(pd, TASK_SHARED_PAGE, SHARED, READ_ONLY_USER_ATTR); 
+  mmu_map_page(pd, TASK_SHARED_PAGE, SHARED, READ_ONLY_USER_ATTR); // Probar que el physical de shared sea un free user page
 
-  // Mapeos memoria de video
-
-  mmu_map_page(pd, TASK_VIDEO_MEM_START, DUMMY_VIDEO_MEM_START, READ_WRITE_USER_ATTR);
-
-  mmu_map_page(pd, TASK_VIDEO_MEM_END, DUMMY_VIDEO_MEM_END, READ_WRITE_USER_ATTR);
-
+  // Mapeo las dos paginas de video dummy
+  mmu_map_page(pd, VADDR_VIDEO_MEMORY_START, DUMMY_VIDEO_MEMORY_START, MMU_P | MMU_U | MMU_W);
+  mmu_map_page(pd, VADDR_VIDEO_MEMORY_START + PAGE_SIZE, DUMMY_VIDEO_MEMORY_START + PAGE_SIZE, MMU_P | MMU_U | MMU_W);
   return (paddr_t) pd;
 }
 ```
 
-En las demas funciones no habria que cambiar nada ya que siemrpre llaman a esta la cual es la que reserva la memoria nueva que tenemos para video.
+Si la consigna dijera que la que empieza con el video real es la primer tarea le agregaria un parametro a esta funcion que sea el id de la tarea y si el id que recibe la funcion es 1 mapea la de verdad y si no la dummy. 
 
-C y D) Si el cambio de acceso de pantalla es ciclico se parece mucho al scheduler. Lo que podemos hacer es construir un "sistema" analogo al scheduler que determine a que tarea le toca, y en vez de que se cambie de tarea con el cambio de clock se va a cambiar de video cuando en la interrupcion de teclado se detecte que se solto el tab. 
+C) Para indicar que tarea tiene el video voy a agregar una variable global en el archivo `sched.c` que se va a llamar `current_task_with_video` que va a arrancar en -1 representando que no hay ninguna tarea que tiene mapeada el video real. 
 
-Asumo que al principio nadie escribe en la pantalla real y se hace el cambio unicamente al soltar el tab. 
-
-Como voy a empezar sin ninguna tarea con video no hace falta hacer una inicializacion como init_task_dir en sched. Lo unico que voy a hacer es agregar una variable global que indique que tarea tiene video en ese momento y agregar la funcion ```sched_next_video``` que determina el selector de la siguiente tarea a darle video. Entonces en ```sched.c``` agrego:
+Asi que agrego en `sched.c`: 
 
 ```c
-/**
- * Tarea actualmente en ejecución (excepto que esté pasuada, en cuyo caso se
- * corre la idle).
- */
-int8_t current_task = 0;
-int8_t current_task_with_video = 0;
-
-void sched_next_video(void) {
-  // Buscamos la próxima tarea viva (comenzando en la actual)
-  int8_t i;
-  for (i = (current_task_with_video + 1); (i % MAX_TASKS) != current_task_with_video; i++) {
-    // Si esta tarea está disponible la ejecutamos
-    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
-      int16_t i_selector = sched_tasks[i % MAX_TASKS].selector;
-      int16_t idx = i_selector >> 3;
-      if(idx != GDT_IDX_TASK_IDLE && idx != GDT_IDX_TASK_INITIAL){ // Para no darle video ni a la inicial ni a la idle nunca
-        current_task_with_video = i % MAX_TASKS;
-      }
-    }
-  }
-  // Asumo que nunca va a quedar ninguna tarea sin video
-}
+int current_task_with_video = -1;
 ```
 
-Ahora es modifico la interrupcion de teclado para que se fije si la tecla que produjo la interrupcion fue que se solto el tab y en ese caso cambiar el video.
+D) Para realizar el cambio de pantalla al soltar la tecla tab lo que hay que hacer es modificar la rutina de atencion del teclado para que si el scancode de la interrupcion es 0x8F se haga el cambio de mapeo de la pantalla.
 
-Le agregamos la variable compartida entre ```sched``` y ```ism``` current_task_with_video agregandola al principio de ```isr.asm``` como un extern. 
+Por lo que primero modifico la rutina de atencion del teclado: 
 
 ```asm
+;; Rutina de atención del TECLADO
+;; -------------------------------------------------------------------------- ;;
 global _isr33
 
 _isr33:
@@ -101,71 +69,63 @@ _isr33:
     in al, 0x60
     cmp al, 0x8F
     jne .fin
-    ; Si estamos aca es porque hay que cambiar el video
-    ; Si el video actual es de la idle o la inicial no se lo desabilitamos porque nunca se lo dimos en primer lugar. Esto solo puede pasar la primer vez que se suelta el tab porque no habia ninguna tarea asignada
-    cmp  [current_task_with_video], GDT_IDX_TASK_IDLE
-    je .habilitar
-    cmp  [current_task_with_video], GDT_IDX_TASK_INITIAL
-    je .habilitar
-    ; Si estamos aca hay que deshabilitar el video de la tarea actual
-    ; Primero obtenemos su selector
-    call selector_video_actual
-    push ax
-    call cr3_de_selector
-    push eax
-    call deshabilitar_video
-    .habilitar: 
-        call sched_next_video
-        call selector_video_actual
-        push ax
-        call cr3_de_selector
-        push eax
-        call habilitar_video 
+    ; Si estamos aca es porque hay que cambiar cual es la proxima tarea que se le va a dar video
+    push al ; Guardo el valor del scancode
+    call alternar_video
+    pop al
     .fin:
-        push eax
-        call tasks_input_process
-        add esp, 4
-        popad
-        iret
+    push al
+    call tasks_input_process
+    add esp, 1
+    popad
+    iret
 ```
-Con las funciones auxiliares: 
 
-En ```sched.c```:
+Y en `sched.c` defino la funcion `alternar_video`:
 
 ```c
-int16_t selector_video_actual(void){
-    return sched_tasks[current_task_with_video].selector;
+void alternar_video(){
+    // Si existe una tarea que ahora tiene el video se lo desmapeamos
+    if(current_task_with_video != -1){
+        paddr_t cr3_tarea_con_video_vieja = obtener_cr3(sched_tasks[current_task_with_video].selector);
+        // Le desmapeamos la direccion real
+        mmu_unmap_page(cr3_tarea_con_video_vieja, VADDR_VIDEO_MEMORY_START);
+        mmu_unmap_page(cr3_tarea_con_video_vieja, VADDR_VIDEO_MEMORY_START + PAGE_SIZE);
+        // Le mapeamos la direccion dummy
+        mmu_map_page(cr3_tarea_con_video_vieja, VADDR_VIDEO_MEMORY_START, DUMMY_VIDEO_MEMORY_START, MMU_P | MMU_U | MMU_W);
+        mmu_map_page(cr3_tarea_con_video_vieja, VADDR_VIDEO_MEMORY_START + PAGE_SIZE, DUMMY_VIDEO_MEMORY_START + PAGE_SIZE, MMU_P | MMU_U | MMU_W);
+    }
+    else{ // No hay ninguna tarea con video actualmente asi que le damos el valor de 0 para que despues se le asigne el 1 en el loop
+        current_task_with_video = 0;
+    }
+    int8_t i;
+    for (i = (current_task + 1); (i % MAX_TASKS) != current_task; i++) {
+        // Si esta tarea está disponible la ejecutamos
+        if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
+            break;
+        }
+    }
+    // Ajustamos i para que esté entre 0 y MAX_TASKS-1
+    i = i % MAX_TASKS;
+    // Asumo que siempre la tarea que encontramos es ejecutable, asi que le doy el video a esa tarea
+    paddr_t cr3_nueva_tarea_con_video = obtener_cr3(sched_tasks[i].selector);
+    mmu_map_page(cr3_nueva_tarea_con_video, VADDR_VIDEO_MEMORY_START, REAL_VIDEO_MEMORY_START, MMU_P | MMU_U | MMU_W);
+    mmu_map_page(cr3_nueva_tarea_con_video, VADDR_VIDEO_MEMORY_START + PAGE_SIZE, REAL_VIDEO_MEMORY_START + PAGE_SIZE, MMU_P | MMU_U | MMU_W);
 }
 ```
 
-En ```tss.c```:
-```c
-uint32_t cr3_de_selector(int16_t segsel){
-    int16_t idx = segsel >> 3;
+La funcion auxiliar `obtener_cr3` en `sched.c` importando la gdt en ese archivo: 
 
+```c
+pd_entry_t* obtener_cr3(uint16_t segsel) {
+    uint16_t idx = segsel >> 3;
     tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
-
-    return tss_pointer->cr3;
-}
-```
-En ```mmu.c```: 
-
-```c
-void deshabilitar_video(uint32_t cr3_a_deshabilitar){
-    mmu_unmap_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_START);
-    mmu_unmap_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_END);
-
-    mmu_map_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_START, DUMMY_VIDEO_MEM_START, MMU_U | MMU_P | MMU_W);
-    mmu_map_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_START, DUMMY_VIDEO_MEM_END, MMU_U | MMU_P | MMU_W);
-}
-
-void habilitar_video(uint32_t cr3_a_habilitar){
-    mmu_unmap_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_START);
-    mmu_unmap_page(cr3_a_deshabilitar, TASK_VIDEO_MEM_END);
-
-    mmu_map_page(cr3_a_habilitar, TASK_VIDEO_MEM_START, REAL_VIDEO_MEM_START, MMU_U | MMU_P | MMU_W);
-    mmu_map_page(cr3_a_habilitar, TASK_VIDEO_MEM_START, REAL_VIDEO_MEM_END, MMU_U | MMU_P | MMU_W);
+    return tss_pointer.cr3;
 }
 ```
 
-E) Una manera de que las tareas sepan cual tarea tiene la pantalla es agregar una syscall que devuelva el id de la tarea que esta usando la pantalla actualmente. 
+E) Para que la tarea sepa si es su turno de usar la pantalla se me ocurren dos posibilidades. La primera seria que todas las tareas tengan mapeada una pagina donde el primer byte indica que tarea tiene acceso a la pantalla. Todas las tareas van a tener mapeada una direccion fisica y virtual en comun en solo lectura nivel 3 y el kernel la va a tener mapeada como lectura escritura nivel 0, por lo que el kernel va a ser el unico que va a poder escribir ahi informandoles a las tareas quien es la que esta con acceso a video real en este momento. 
+
+La otra opcion seria implementar una syscall que devuelva que tarea es la que tiene actualmente el video, entonces cuando una tarea quiere saber quien tiene video llama, por ejemplo, a la interrupcion numero 80 y en la interrupcion accedemos a la variable `current_task_with_video` y la devolvemos. Para que las tareas puedan usar esta syscall tiene que ser una interrupcion de nivel 3.
+
+F) Para que la tarea no tenga que redibujar la pantalla lo que se podria hacer es que el kernel "administre" dos paginas para cada tarea que va a contener una copia de lo que dibujaron durante su tiempo con la pantalla. Asi que cuando una tarea termine de usar la pantalla el kernel se va a ocupar de copiar todos los datos en pantalla a la copia y cuando le vuelva a tocar su tiempo en pantalla lo que va a hacer antes de mapearla va a ser restaurar lo que habia en la pantalla vieja pegando esa copia en la pantalla verdadera. 
