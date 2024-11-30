@@ -59,9 +59,10 @@ void copiar_pagina(vaddr_t direccion_a_copiar, uint32_t id_tarea){
 La funcion auxiliar `obtener_cr3` en `sched.c` importando la gdt en ese archivo: 
 
 ```c
-paddr_t obtener_cr3(uint16_t segsel) {
+pd_entry_t* obtener_cr3(uint16_t segsel) {
     uint16_t idx = segsel >> 3;
-    return gdt[idx].cr3;
+    tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
+    return tss_pointer.cr3;
 }
 ```
 
