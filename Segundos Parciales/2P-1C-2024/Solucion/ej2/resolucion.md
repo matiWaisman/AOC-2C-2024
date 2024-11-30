@@ -8,7 +8,7 @@ uint16_t sched_next_task_con_prioridad(void) {
   int8_t i;
   for (i = (current_task + 1); (i % MAX_TASKS) != current_task; i++) {
     // Si esta tarea está disponible la ejecutamos
-    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE && es_prioritaria(i)) {
+    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE && es_prioritaria(sched_tasks[i % MAX_TASKS].selector)) {
       current_task = i % MAX_TASKS;
       return sched_tasks[i % MAX_TASKS].selector;
     }
@@ -40,11 +40,11 @@ Para llegar a la pila la funcion es_prioritaria va a acceder con el selector gua
 Lo buscamos en la pila porque desde la rutina de atencion al llamar funciones en C puede estar sobreescribiendose edx en cualquier momento, por lo cual buscar el edx que se guarda en la tss no tiene sentido. 
 
 ```c
-bool es_prioritaria(int8_t id){
+bool es_prioritaria(uint16_t segsel){
 
-  uint16_t seg_sel = sched_tasks[id].selector;
+  uint16_t idx = segsel >> 3;
 
-  tss_t* tss_pointer = (tss_t*)((gdt[seg_sel].base_15_0) | (gdt[seg_sel].base_23_16 << 16) | (gdt[seg_sel].base_31_24 << 24));
+  tss_t* tss_pointer = (tss_t*)((gdt[idx].base_15_0) | (gdt[idx].base_23_16 << 16) | (gdt[idx].base_31_24 << 24));
 
   uint32_t* stack_pointer = tss_pointer->esp;
 
