@@ -4,8 +4,8 @@ Asumo que lo que hay que devolver en el array son las direcciones virtuales sin 
 ```c
 vaddr_t* paginas_modificadas(int32_t cr3){
   // Primero defino una variable para despues crear el array que va a tener el tamaño del array
- uint32_t arr_size = cantidad_paginas_modificadas(cr3);
- vaddr_t res[arr_size];
+  uint32_t arr_size = cantidad_paginas_modificadas(cr3);
+  vaddr_t res[arr_size];
 
   int elemento_actual = 0;
 
