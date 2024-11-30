@@ -4,8 +4,8 @@ Asumo que lo que hay que devolver en el array son las direcciones virtuales sin 
 ```c
 vaddr_t* paginas_modificadas(int32_t cr3){
   // Primero defino una variable para despues crear el array que va a tener el tamaño del array
-  uint32_t arr_size = cantidad_paginas_modificadas(cr3);
-  vaddr_t* res = malloc(arr_size * sizeof(vaddr_t));
+ uint32_t arr_size = cantidad_paginas_modificadas(cr3);
+ vaddr_t res[arr_size];
 
   int elemento_actual = 0;
 
@@ -16,7 +16,6 @@ vaddr_t* paginas_modificadas(int32_t cr3){
       pt_entry_t pte_entry = page_table_pointer[j];
       uint32_t esta_dirty_y_accesed = pte_entry.attrs & 0x60;
       if(esta_dirty_y_accesed){
-        // Tendria que en este momento modificar el bit accesed para que la proxima vez que se llame a la funcion no este mas? Misma duda para el dirty
         res[elemento_actual] = (i << 22) || (j << 12);
         elemento_actual = elemento_actual + 1;
       }
