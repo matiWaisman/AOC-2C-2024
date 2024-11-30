@@ -1,55 +1,40 @@
-A) Cuando se ejecuta una instruccion no soportada por la isa se produce la excepcion numero 6, undefined opcode.
+A) La excepcion que se produce cuando se trata de ejecutar una instruccion no soportada es la numero 6, invalid opcode. 
 
-B) Si se llama a RSTLOOP desde codigo de nivel usuario la pila se va a ver asi:
+B) ![alt text](./images/image.png) 
 
-![alt text](./images/image2.png)
+La pila se va a ver asi con esp apuntando a eip. 
 
-Con esp igualmente apuntando a EIP.
+C) La direccion de retorno que se encuentra en la pila es la que apunta a RSTLOOP. Lo que vamos a tener que hacer para que se ejecute la siguiente instruccion es incrementar el eip de la pila en 4 bytes, ya que la instruccion ocupa 4 bytes. 
 
-C) CS y Eip en ambos casos van a estar apuntando a la instruccion que genero la excepcion.
-
-D) Vamos a tener que agregar la rutina de atencion de la interrupcion en isr.asm y comentar el isrne 6. La rutina va a ser: 
+D) El codigo en `isr.asm` de la atencion de la interrupcion va a ser: 
 
 ```asm
 global _isr6
+
 _isr6:
-  mov esi, [esp] ; Obtenemos el eip de la intruccion que produjo la excepcion
-  mov al, [esi] ; Cargamos en al la instruccion a la que apunta
-  cmp al, 0x0F
-  jne .fin
-  ; Si estamos aca es porque la primera parte de la codificacion esta bien, ahora hay que checkear la segunda
-  mov al, [esi + 1] ; Cargamos la segunda parte de la codificacion
-  cmp al, 0x0B
-  jne .fin
-  ; Si estamos aca es porque se llamo a RSTLOOP
-  xor ecx, ecx ; Ponemos ecx en 0
-  add DWORD [esp], 2 ; Le sumamos dos al eip de la pila para que apunte a la siguiente instruccion
-  iret
-  .fin:
-    ; Si estamos aca es porque no se llamo a RSTLOOP por lo que hay que pausarla y saltar a la idle
-    str ax ; Guardamos el tr en ax
-    push ax ; Le pasamos el selector como parametro a pause_task
-    call pause_task
-    add esp 2 ; Desapilamos
-    call sched_idle_selector ; Buscamos el selector de la idle en el scheduler y saltamos ahi
-    jmp eax ; Saltamos a la idle
+	; Estamos en un page fault.
+    mov esi, [esp] ; Ahora en esi esta el eip de la tarea
+    mov ax, [esi] ; En al esta la primera parte del opcode 
+    cmp al, 0x0B0F
+    jne .matar_tarea
+    ; Si estamos aca es porque se trato de ejecutar RSTLOOP
+    ; Para que cuando se vuelva de la tarea se apunte a la siguiente instruccion voy a modificar el valor del eip guardado en la pila
+    add esi, 2
+    mov [esp], esi
+    .matar_tarea: 
+    call matar_tarea_actual
+    mov ax, [GDT_IDX_TASK_IDLE]
+    shl ax, 3
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset] 
 ```
 
-Y las funciones auxiliares nuevas en sched.c son: 
-```c 
-uint16_t sched_idle_selector(void){
-  return GDT_IDX_TASK_IDLE << 3;
+Y en `sched.c` definimos la funciones: 
+
+```c
+void matar_tarea_actual(){
+  sched_disable_task(current_task);
 }
 
-void pause_task(uint16_t selector_tarea_a_pausar){
-  for (int8_t i = 0; i < MAX_TASKS; i++) {
-    if (sched_tasks[i].selector == selector_tarea_a_pausar) {
-      sched_tasks[i] = (sched_entry_t) {
-        .selector = selector_tarea_a_pausar,
-	      .state = TASK_PAUSED,
-      };
-      return;
-    }
-  }
-}
+
 ```
