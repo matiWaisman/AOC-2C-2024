@@ -24,7 +24,7 @@ Definimos entonces la rutina de atención de la syscall en `isr.asm`:
 global _isr80
 _isr80:
     pushad
-    cmp current_task, 1 
+    cmp [current_task], 1 
     jne .fin ; Si el id de la tarea no es la 1 no tiene permitido robar
     ; Si estamos aca es porque el que hizo la syscall es la tarea 1 que puede robar
     ; Como nunca llamamos a ninguna funcion de C tanto el registro edi como esi tienen los valores que necesitamos, por lo que no hace falta irlos a buscar a la tss.
