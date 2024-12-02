@@ -4,7 +4,7 @@ Luego en `isr.h` agregamos `void _isr100();`.
 
 La convencion que voy a usar para recibir los parametros desde la syscall va a ser que en `eax` esta la direccion virtual, en `edx` la direccion fisica y en `di` el selector de segmento que apunta al descriptor de tss en la gdt. 
 
-B) Para que la tarea actual retome su ejecucion en la direccion pasada lo que voy a hacer es modificar el esi que se guarda en la pila de la interrupcion para que apunte a donde queremos que siga el codigo, para que cuando salgamos de la interrupcion cuando se le ponga el valor del iret al esi sea el valor modificado. 
+B) Para que la tarea actual retome su ejecucion en la direccion pasada lo que voy a hacer es modificar el eip que se guarda en la pila de la interrupcion para que apunte a donde queremos que siga el codigo, para que cuando salgamos de la interrupcion cuando se le ponga el valor del iret al esi sea el valor modificado. 
 
 Y para la tarea que nos llama con su selector vamos a acceder a su tss y modificar el eip de la pila de la tss. 
 
@@ -16,7 +16,7 @@ La rutina de atencion va a ser:
 global _isr32
 _isr32:
     pushad
-    mov [esp + 4], eax ; Con esto hago que el esi de la pila apunte a la direccion virtual
+    mov [esp + 0x20], eax ; Con esto hago que el eip de la pila apunte a la direccion virtual
     mov edi, [esp + 0x2C] ; Pongo en edi el esp3 de la pila
     and edi, 0xFFFFF000
     add edi, 0x1000
