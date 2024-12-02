@@ -32,8 +32,7 @@ hay_que_modificar_accesed_tarea_entrante db 0x00
 global _isr80
 
 _isr80:
-	; Estamos en un page fault.
-	pushad 
+    pushad 
     mov [hay_que_modificar_accesed_tarea_entrante], 1
     popad
     iret
