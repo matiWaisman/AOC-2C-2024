@@ -17,6 +17,7 @@ global _isr32
 _isr32:
     pushad
     mov [esp + 0x20], eax ; Con esto hago que el eip de la pila apunte a la direccion virtual
+    ; Aunque todavia esa direccion virtual no esta mapeada despues la vamos a mapear antes que usarla
     mov edi, [esp + 0x2C] ; Pongo en edi el esp3 de la pila
     and edi, 0xFFFFF000
     add edi, 0x1000
